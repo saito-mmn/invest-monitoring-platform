@@ -18,8 +18,8 @@ permissions:
 
 env:
   DATABASE_URL: "${{ secrets.DATABASE_URL }}"
-  GCS_BUCKET: invest-dwh-db-storage
-  RAW_DATA_URI: gs://invest-dwh-db-storage/raw
+  GCS_BUCKET: "${{ vars.GCS_BUCKET }}"
+  RAW_DATA_URI: "gs://${{ vars.GCS_BUCKET }}/raw"
 
 jobs:
   update-data:

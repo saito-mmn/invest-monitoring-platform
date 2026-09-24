@@ -13,6 +13,8 @@ backend/.env.neon
 # provision_roles.py が出力する接続URL。環境ごとに増えるためワイルドカードで塞ぐ。
 backend/.env.neon.*
 data/raw/
+data/backups/
+*.sql.gz
 
 # frontend
 frontend/node_modules/

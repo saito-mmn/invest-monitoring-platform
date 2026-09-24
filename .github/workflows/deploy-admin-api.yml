@@ -17,12 +17,12 @@ permissions:
   contents: read
 
 env:
-  GCP_PROJECT_ID: invest-dwh
-  ARTIFACT_REPOSITORY: invest-monitoring
-  CLOUD_RUN_SERVICE: invest-monitoring-admin-api
-  DATABASE_SECRET: invest-database-writer-url
-  MANAGEMENT_KEY_SECRET: invest-management-api-key
-  RUNTIME_SERVICE_ACCOUNT: invest-admin-runtime@invest-dwh.iam.gserviceaccount.com
+  GCP_PROJECT_ID: "${{ vars.GCP_PROJECT_ID }}"
+  ARTIFACT_REPOSITORY: "${{ vars.ARTIFACT_REPOSITORY }}"
+  CLOUD_RUN_SERVICE: "${{ vars.ADMIN_API_SERVICE }}"
+  DATABASE_SECRET: "${{ vars.ADMIN_DATABASE_SECRET }}"
+  MANAGEMENT_KEY_SECRET: "${{ vars.MANAGEMENT_KEY_SECRET }}"
+  RUNTIME_SERVICE_ACCOUNT: "${{ vars.ADMIN_RUNTIME_SERVICE_ACCOUNT }}"
 
 jobs:
   deploy:

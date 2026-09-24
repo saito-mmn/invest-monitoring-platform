@@ -11,8 +11,8 @@
 
 ```bash
 # リポジトリのクローン
-git clone https://github.com/saito-structural-data/invest-monitoring-db.git
-cd invest-monitoring-db
+git clone https://github.com/saito-mmn/invest-monitoring-platform.git
+cd invest-monitoring-platform
 
 # バックエンド
 python -m venv venv
@@ -58,7 +58,8 @@ python scripts/jquants_sync.py prices --years 5
 python scripts/daily_update.py
 ```
 
-> 日次更新は GitHub Actions で毎日 UTC 21:00（JST 06:00）に自動実行されます。
+> 実データ環境の日次更新は、非公開の運用リポジトリから定期実行します。公開版の
+> `daily-update.yml` は、構成を検証できるよう手動実行（`workflow_dispatch`）だけを残しています。
 
 日次ワークフローは価格の更新に加えて、プランで取得できる最新の開示日の財務サマリーを取り込みます。
 財務の取得に失敗しても価格の更新と公開は止めません。初回投入や銘柄を追加したときは、
@@ -135,6 +136,14 @@ cd frontend && npm run lint && npx tsc --noEmit && npm test && npm run build
 
 ruffとmypyの設定は [`pyproject.toml`](../pyproject.toml) に集約し、採用するルールを明示しています。
 ツールのバージョンが上がってもCIの判定が勝手に変わらないようにするためです。
+
+### 公開版の運用workflow
+
+deploy・日次ETLのworkflowは構成例として収録していますが、実インフラの識別子とSecretは含めていません。
+別環境で実行する場合は、GitHub Environmentsの承認ルールを設定したうえで、Repository Variablesに
+`GCP_PROJECT_ID`、`GCP_PROJECT_NUMBER`、`ARTIFACT_REPOSITORY`、各Cloud Run service・runtime service
+account・Secret名、`GCS_BUCKET`を登録し、Repository Secretsに必要な認証情報を登録します。本番環境の
+値と定期実行scheduleは、非公開の運用リポジトリだけで管理します。
 
 ---
 
