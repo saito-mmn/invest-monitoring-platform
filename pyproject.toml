@@ -1,0 +1,41 @@
+# Python向けツール設定。CIの結果がツールのバージョン差で変わらないよう、
+# 採用するルールを明示的に固定する。
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["backend"]
+exclude = ["venv", ".venv", "**/__pycache__", "frontend"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # import順
+    "UP",   # 新しい構文へのアップグレード
+    "B",    # bugbear
+    "SIM",  # 簡約できる書き方
+    "RUF",  # ruff固有
+]
+ignore = [
+    # FastAPIは Depends() を既定値に置く設計なので、この指摘は当プロジェクトでは誤検知になる。
+    "B008",
+    # 日本語のコメント・文字列・docstringを「紛らわしい文字」として検出するため無効化する。
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "db", "scripts"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["backend"]
+exclude = "(venv|__pycache__)"
+ignore_missing_imports = true
+# app / db / scripts は backend 直下を起点とした名前空間パッケージとして解決する。
+mypy_path = "backend"
+explicit_package_bases = true
+namespace_packages = true

@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: invest
+      POSTGRES_USER: invest
+      POSTGRES_PASSWORD: invest
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # テスト用DBを初回起動時に作る。テストは全テーブルをTRUNCATEするため、
+      # 開発DB(invest)と同じDBを対象にしない。
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/10-init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U invest -d invest"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:

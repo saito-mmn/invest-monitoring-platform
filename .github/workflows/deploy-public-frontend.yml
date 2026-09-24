@@ -1,0 +1,131 @@
+name: Deploy Public Frontend
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "Cloud Run / Artifact Registry region"
+        type: string
+        required: true
+        default: australia-southeast1
+
+concurrency:
+  group: deploy-public-frontend
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  GCP_PROJECT_ID: invest-dwh
+  GCP_PROJECT_NUMBER: "540015602390"
+  ARTIFACT_REPOSITORY: invest-monitoring
+  FRONTEND_SERVICE: invest-monitoring-frontend
+  BACKEND_SERVICE: invest-monitoring-public-api
+  RUNTIME_SERVICE_ACCOUNT: invest-frontend-runtime@invest-dwh.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: public
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve backend URL and verify prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud artifacts repositories describe "${ARTIFACT_REPOSITORY}" \
+            --project "${GCP_PROJECT_ID}" \
+            --location "${{ inputs.region }}" >/dev/null
+          backend_url="$(gcloud run services describe "${BACKEND_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${{ inputs.region }}" \
+            --format='value(status.url)')"
+          curl --fail --show-error --silent "${backend_url}/ready" >/dev/null
+          echo "BACKEND_URL=${backend_url}" >> "${GITHUB_ENV}"
+
+      - name: Configure Docker authentication
+        run: gcloud auth configure-docker "${{ inputs.region }}-docker.pkg.dev" --quiet
+
+      - name: Build and push read-only frontend image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${{ inputs.region }}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/frontend:${GITHUB_SHA}"
+          docker build \
+            --file frontend/Dockerfile \
+            --build-arg "NEXT_PUBLIC_API_URL=${BACKEND_URL}/api" \
+            --build-arg NEXT_PUBLIC_READ_ONLY=true \
+            --tag "${image}" \
+            .
+          docker push "${image}"
+          echo "IMAGE=${image}" >> "${GITHUB_ENV}"
+
+      - name: Deploy public frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run deploy "${FRONTEND_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${{ inputs.region }}" \
+            --platform managed \
+            --image "${IMAGE}" \
+            --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
+            --port 8080 \
+            --allow-unauthenticated \
+            --min-instances 0 \
+            --max-instances 1 \
+            --memory 512Mi \
+            --cpu 1 \
+            --concurrency 40 \
+            --timeout 30
+
+      - name: Allow the frontend origin on the public API
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_url="$(gcloud run services describe "${FRONTEND_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${{ inputs.region }}" \
+            --format='value(status.url)')"
+          actual_service_account="$(gcloud run services describe "${FRONTEND_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${{ inputs.region }}" \
+            --format='value(spec.template.spec.serviceAccountName)')"
+          test "${actual_service_account}" = "${RUNTIME_SERVICE_ACCOUNT}"
+          regional_url="https://${FRONTEND_SERVICE}-${GCP_PROJECT_NUMBER}.${{ inputs.region }}.run.app"
+          gcloud run services update "${BACKEND_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${{ inputs.region }}" \
+            --update-env-vars "^@^CORS_ORIGINS=[\"${status_url}\",\"${regional_url}\"]" >/dev/null
+          echo "FRONTEND_URL=${regional_url}" >> "${GITHUB_ENV}"
+          echo "FRONTEND_STATUS_URL=${status_url}" >> "${GITHUB_ENV}"
+
+      - name: Verify public frontend and CORS
+        shell: bash
+        run: |
+          set -euo pipefail
+          html="$(curl --fail --show-error --silent "${FRONTEND_URL}")"
+          if [[ "${html}" != *"投資データ基盤"* ]]; then
+            echo "Expected application title was not found" >&2
+            exit 1
+          fi
+          cors_headers="$(curl --fail --show-error --silent --include \
+            --header "Origin: ${FRONTEND_URL}" \
+            "${BACKEND_URL}/api/themes/summary")"
+          echo "${cors_headers}" | grep -qi "access-control-allow-origin: ${FRONTEND_URL}"
+          status_cors_headers="$(curl --fail --show-error --silent --include \
+            --header "Origin: ${FRONTEND_STATUS_URL}" \
+            "${BACKEND_URL}/api/themes/summary")"
+          echo "${status_cors_headers}" | grep -qi "access-control-allow-origin: ${FRONTEND_STATUS_URL}"
+          echo "Public Frontend: ${FRONTEND_URL}" >> "${GITHUB_STEP_SUMMARY}"

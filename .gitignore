@@ -1,0 +1,31 @@
+.venv/
+__pycache__/
+*.db
+*.db.generation
+*.db-shm
+*.db-wal
+.DS_Store
+logs/
+*.pyc
+.env
+backend/.env
+backend/.env.neon
+# provision_roles.py が出力する接続URL。環境ごとに増えるためワイルドカードで塞ぐ。
+backend/.env.neon.*
+data/raw/
+
+# frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
+
+# Python cache
+*.egg-info/
+dist/
+build/
+
+memo/
+.claude/
+.obsidian/
+gha-creds-*.json

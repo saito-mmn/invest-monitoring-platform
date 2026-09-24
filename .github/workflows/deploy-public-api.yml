@@ -1,0 +1,101 @@
+name: Deploy Public API
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "Cloud Run / Artifact Registry region"
+        type: string
+        required: true
+        default: australia-southeast1
+
+concurrency:
+  group: deploy-public-api
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  GCP_PROJECT_ID: invest-dwh
+  ARTIFACT_REPOSITORY: invest-monitoring
+  CLOUD_RUN_SERVICE: invest-monitoring-public-api
+  DATABASE_SECRET: invest-database-reader-url
+  RUNTIME_SERVICE_ACCOUNT: invest-public-api-runtime@invest-dwh.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: public
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: "${{ secrets.GCP_CREDENTIALS }}"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Verify deployment prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud artifacts repositories describe "${ARTIFACT_REPOSITORY}" \
+            --project "${GCP_PROJECT_ID}" \
+            --location "${{ inputs.region }}" >/dev/null
+          gcloud secrets versions access latest \
+            --secret "${DATABASE_SECRET}" \
+            --project "${GCP_PROJECT_ID}" >/dev/null
+
+      - name: Configure Docker authentication
+        run: gcloud auth configure-docker "${{ inputs.region }}-docker.pkg.dev" --quiet
+
+      - name: Build and push image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${{ inputs.region }}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/public-api:${GITHUB_SHA}"
+          docker build --file backend/Dockerfile --tag "${image}" .
+          docker push "${image}"
+          echo "IMAGE=${image}" >> "${GITHUB_ENV}"
+
+      - name: Deploy read-only API
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run deploy "${CLOUD_RUN_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${{ inputs.region }}" \
+            --platform managed \
+            --image "${IMAGE}" \
+            --service-account "${RUNTIME_SERVICE_ACCOUNT}" \
+            --port 8080 \
+            --allow-unauthenticated \
+            --set-env-vars DATABASE_READ_ONLY=true,MANAGEMENT_API_ENABLED=false \
+            --set-secrets "DATABASE_URL=${DATABASE_SECRET}:latest" \
+            --min-instances 0 \
+            --max-instances 1 \
+            --memory 512Mi \
+            --cpu 1 \
+            --concurrency 40 \
+            --timeout 30
+
+      - name: Verify public endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${{ inputs.region }}" \
+            --format='value(status.url)')"
+          actual_service_account="$(gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${{ inputs.region }}" \
+            --format='value(spec.template.spec.serviceAccountName)')"
+          test "${actual_service_account}" = "${RUNTIME_SERVICE_ACCOUNT}"
+          curl --fail --show-error --silent "${url}/health"
+          curl --fail --show-error --silent "${url}/ready"
+          echo "Public API: ${url}" >> "${GITHUB_STEP_SUMMARY}"

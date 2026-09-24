@@ -1,0 +1,6 @@
+{
+  "extraPaths": ["backend"],
+  "include": ["backend"],
+  "exclude": ["**/__pycache__", "**/node_modules", "venv", ".venv"],
+  "pythonVersion": "3.11"
+}

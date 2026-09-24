@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* シグナルバッジ */
+.badge-ok    { @apply inline-block px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800; }
+.badge-watch { @apply inline-block px-2 py-0.5 rounded text-xs font-bold bg-yellow-100 text-yellow-800; }
+.badge-alert { @apply inline-block px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-800; }
+.badge-buy   { @apply inline-block px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-800; }
+.badge-sell  { @apply inline-block px-2 py-0.5 rounded text-xs font-bold bg-orange-100 text-orange-800; }
+.badge-hold  { @apply inline-block px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-700; }
+.badge-wait  { @apply inline-block px-2 py-0.5 rounded text-xs font-bold bg-purple-100 text-purple-800; }

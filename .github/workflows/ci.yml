@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# 同じブランチへの連続pushでは古い実行を打ち切る。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (lint / types / tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: invest
+          POSTGRES_USER: invest
+          POSTGRES_PASSWORD: invest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U invest -d invest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://invest:invest@localhost:5432/invest_test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      # テストは全テーブルをTRUNCATEするため、開発DBと分けた専用DBを使う。
+      - name: Create test database
+        run: |
+          PGPASSWORD=invest psql -h localhost -U invest -d invest \
+            -c "CREATE DATABASE invest_test OWNER invest"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check backend
+
+      - name: Type check (mypy)
+        run: mypy
+
+      - name: Tests (pytest)
+        run: pytest
+
+      # スキーマ定義と生成ドキュメント・データ定義書のずれを検出する。
+      - name: Schema docs consistency
+        run: python backend/scripts/generate_schema_docs.py --check
+
+      # ファイル移動で残るリンク切れと、移行後に残る古い用語を検出する。
+      - name: Docs consistency
+        run: python backend/scripts/check_docs.py
+
+  # Dockerfileの破損はテストでは検出できない。DBを焼き込んでいた頃、Git管理外の
+  # data/invest.db を COPY していたため、クリーンな環境ではビルドできなかった。
+  docker:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -f backend/Dockerfile -t invest-backend:ci .
+
+      - name: Build public frontend image
+        run: >-
+          docker build
+          -f frontend/Dockerfile
+          --build-arg NEXT_PUBLIC_API_URL=https://example.invalid/api
+          --build-arg NEXT_PUBLIC_READ_ONLY=true
+          -t invest-frontend:ci
+          .
+
+  frontend:
+    name: Frontend (lint / types / build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 開発環境と同じメジャーバージョンを使い、ローカルで通るものがCIでも通る状態にする。
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Type check (tsc)
+        run: npx tsc --noEmit
+
+      - name: Tests (vitest)
+        run: npm test
+
+      - name: Production build
+        run: npm run build
